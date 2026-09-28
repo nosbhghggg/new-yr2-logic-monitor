@@ -4,54 +4,47 @@ version '1.0'
 
 sourceSets.main.java.srcDirs = ["src"]
 
-tasks.withType(JavaCompile) {
-    options.encoding = "UTF-8"
-}
-
 repositories{
     mavenCentral()
-    maven{ url "https://raw.githubusercontent.com/Zelaux/MindustryRepo/master/repository" }
     maven{ url 'https://www.jitpack.io' }
 }
 
+tasks.withType(JavaCompile){
+    options.encoding = "UTF-8"
+    //游戏运行在 Java 17 上, 固定 release 以免用到更高版本的 API
+    options.release = 17
+    options.compilerArgs = ["-Xlint:all"]
+}
+
 java{
-    targetCompatibility = 8
     sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 ext{
-    //the build number that this mod is made for
-    mindustryVersion = 'v146'
-    jabelVersion = "93fde537c7"
+    //本模组适配的游戏版本(v146 -> v160.5)
+    mindustryVersion = 'v160.5'
+    modName = 'yr2-logic-monitor'
     //windows sucks
     isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
     sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
 }
 
-//java 8 backwards compatibility flag
-allprojects{
-    tasks.withType(JavaCompile){
-        options.compilerArgs.addAll(['--release', '8'])
-    }
-}
-
 dependencies{
-    implementation 'org.jetbrains:annotations:20.1.0'
     compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
     compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
-    annotationProcessor "com.github.Anuken:jabel:$jabelVersion"
 }
 
 //force arc version
 configurations.all{
-    resolutionStrategy.eachDependency { details ->
+    resolutionStrategy.eachDependency{ details ->
         if(details.requested.group == 'com.github.Anuken.Arc'){
             details.useVersion "$mindustryVersion"
         }
     }
 }
 
-task jarAndroid{
+tasks.register('jarAndroid'){
     dependsOn "jar"
 
     doLast{
@@ -62,22 +55,31 @@ task jarAndroid{
         if(!platformRoot) throw new GradleException("No android.jar found. Ensure that you have an Android platform installed.")
 
         //collect dependencies needed for desugaring
-        def dependencies = (configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList() + [new File(platformRoot, "android.jar")]).collect{ "--classpath $it.path" }.join(" ")
+        def classPaths = configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList() + [new File(platformRoot, "android.jar")]
 
-        def d8 = isWindows ? "d8.bat" : "d8"
+        def buildTools = new File("$sdkRoot/build-tools/").listFiles()?.sort()?.reverse()?.find{ f -> new File(f, isWindows ? "d8.bat" : "d8").exists() }
+        def d8 = buildTools ? new File(buildTools, isWindows ? "d8.bat" : "d8").absolutePath : (isWindows ? "d8.bat" : "d8")
 
-        //dex and desugar files - this requires d8 in your PATH
-        "$d8 $dependencies --min-api 14 --output ${project.archivesBaseName}Android.jar ${project.archivesBaseName}Desktop.jar"
-            .execute(null, new File("$buildDir/libs")).waitForProcessOutput(System.out, System.err)
+        //用参数列表而非拼接字符串, 避免路径里的空格把命令拆断
+        List<String> command = new ArrayList<String>()
+        command.add(d8)
+        classPaths.each{ command.add("--classpath"); command.add(it.path) }
+        command.add("--min-api"); command.add("14")
+        command.add("--output"); command.add(modName + "Android.jar")
+        command.add(modName + "Desktop.jar")
+
+        def builder = new ProcessBuilder(command.toArray(new String[0]))
+        builder.directory(file("$buildDir/libs"))
+        builder.redirectErrorStream(true)
+        def process = builder.start()
+        process.inputStream.eachLine{ println it }
+        def code = process.waitFor()
+        if(code != 0) throw new GradleException("d8 failed with exit code $code")
     }
 }
 
 jar{
-    archiveFileName = "${base.archivesBaseName}Desktop.jar"
-
-    from{
-        configurations.runtimeClasspath.collect{ it.isDirectory() ? it : zipTree(it) }
-    }
+    archiveFileName = "${modName}Desktop.jar"
 
     from(rootDir){
         include "mod.hjson"
@@ -88,17 +90,15 @@ jar{
     }
 }
 
-task deploy(type: Jar){
-    dependsOn jarAndroid
-    dependsOn jar
-    archiveFileName = "${base.archivesBaseName}.jar"
+tasks.register('deploy', Jar){
+    dependsOn "jarAndroid"
+    dependsOn "jar"
+    archiveFileName = "${modName}.jar"
 
-    from{ [zipTree("$buildDir/libs/${project.archivesBaseName}Desktop.jar"), zipTree("$buildDir/libs/${project.archivesBaseName}Android.jar")] }
+    from{ [zipTree("$buildDir/libs/${modName}Desktop.jar"), zipTree("$buildDir/libs/${modName}Android.jar")] }
 
     doLast{
-        delete{
-            delete "$buildDir/libs/${project.archivesBaseName}Desktop.jar"
-            delete "$buildDir/libs/${project.archivesBaseName}Android.jar"
-        }
+        delete "$buildDir/libs/${modName}Desktop.jar"
+        delete "$buildDir/libs/${modName}Android.jar"
     }
 }

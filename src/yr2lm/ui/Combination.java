@@ -6,7 +6,6 @@ import arc.math.geom.Vec2;
 import arc.scene.Element;
 import arc.scene.ui.ImageButton;
 import arc.scene.ui.layout.Table;
-import arc.util.serialization.SerializationException;
 import mindustry.Vars;
 import mindustry.gen.Building;
 import mindustry.gen.Icon;
@@ -15,8 +14,10 @@ import mindustry.ui.Styles;
 import mindustry.world.blocks.logic.LogicBlock;
 import mindustry.world.blocks.logic.MemoryBlock;
 import mindustry.world.blocks.logic.MessageBlock;
+import yr2lm.Yr2Vars;
 import yr2lm.Yr2lmain;
 import yr2lm.graphics.DrawExt;
+import yr2lm.util.MemUtil;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -40,7 +41,7 @@ public class Combination extends Yrailiuxa2 {
                 t.table(tt -> tt.labelWrap(() -> {
                     Element e = Core.scene.hit(Core.input.mouseX(), Core.input.mouseY(), true);
                     if (e != null && e.isDescendantOf(monitor)) {
-                        return "[#00ffff]" + monitor.name;
+                        return "[#" + Yr2Vars.themeHex + "]" + monitor.name;
                     } else return monitor.name;
                 }).grow()).grow().pad(0, 10, 0, 5);
                 t.table(tt -> {
@@ -62,15 +63,20 @@ public class Combination extends Yrailiuxa2 {
         }
 
         public void drawInfo() {
-            DrawExt.select(building, Color.valueOf("00ffff"));
-            DrawExt.screenWorldLine(new Vec2(Core.input.mouse()), building, Color.valueOf("00ffff"));
+            DrawExt.select(building, Yr2Vars.themeColor);
+            DrawExt.screenWorldLine(Core.input.mouseX(), Core.input.mouseY(), building, Yr2Vars.themeColor);
             if (!monitor.hidden) {
-                DrawExt.screenRect(monitor.pos, monitor.size, Color.valueOf("00ffff"));
-                DrawExt.screenLine(new Vec2(Core.input.mouse()), new Vec2(monitor.pos).mulAdd(monitor.size, 0.5f), Color.valueOf("00ffff"));
+                float sx = monitor.getActualScreenX();
+                float sy = monitor.getActualScreenY();
+                float sw = monitor.getActualScreenWidth();
+                float sh = monitor.getActualScreenHeight();
+                DrawExt.screenRect(sx, sy, sw, sh, Yr2Vars.themeColor);
+                DrawExt.screenLine(Core.input.mouseX(), Core.input.mouseY(), sx + sw * 0.5f, sy + sh * 0.5f, Yr2Vars.themeColor);
             }
         }
 
-        public void removeFromScene() {
+        /** 从场景移除窗口并同步移出管理列表 (区别于基类仅移出场景的 removeFromScene)。 */
+        public void removeAndDispose() {
             monitor.removeFromScene();
             monitors.remove(monitor);
         }
@@ -80,8 +86,9 @@ public class Combination extends Yrailiuxa2 {
     private final ArrayList<Class<? extends Building>> molds;
     private final ArrayList<MonitorCell> monitorCells;
 
+    @SuppressWarnings("this-escape")
     public Combination() {
-        super("yr2lm-" + Vars.mods.getMod(Yr2lmain.class).meta.version);
+        super("yr2lm-" + Vars.mods.getMod(Yr2lmain.class).meta.version, false);
         size.set(400, 300);
         minSize.set(200, 150);
         monitorsTable = new Table();
@@ -93,6 +100,9 @@ public class Combination extends Yrailiuxa2 {
         molds.add(MemoryBlock.MemoryBuild.class);
         molds.add(MessageBlock.MessageBuild.class);
         monitorCells = new ArrayList<>();
+        //默认不显示主窗口，由右下角建筑栏的 "y" 按钮唤出
+        hidden = true;
+        onClose = this::closeMain;
     }
 
     private void combinationTableInit() {
@@ -103,15 +113,13 @@ public class Combination extends Yrailiuxa2 {
                         b.setText("add");
                         Building selected = getWorldBuild();
                         if (selected != null && molds.contains(selected.getClass())) {
-                            DrawExt.select(selected, Color.valueOf("00ffff"));
+                            DrawExt.select(selected, Yr2Vars.themeColor);
                             if (Core.input.isTouched()) {
                                 addToCombination(selected);
                                 selected.deselect();
+                                b.setText("[grey]add");
+                                binding = false;
                             }
-                        }
-                        if (Core.input.isTouched()) {
-                            b.setText("[grey]add");
-                            binding = false;
                         }
                     }
                 }).grow();
@@ -156,25 +164,79 @@ public class Combination extends Yrailiuxa2 {
         });
     }
 
-    private void addToCombination(Building building) {
-        Monitor monitor = null;
+    public void addToCombination(Building building) {
+        openFloating(building, Core.input.mouse());
+    }
+
+    public Monitor getMonitor(Building building) {
+        for (Monitor m : monitors) {
+            if (m.getBuilding() == building) return m;
+        }
+        return null;
+    }
+
+    public Monitor openFloating(Building building, Vec2 mousePos) {
+        Monitor monitor = getMonitor(building);
+        if (monitor == null) {
+            monitor = createMonitor(building, mousePos);
+            if (monitor == null) return null;
+            final Monitor m = monitor;
+            monitor.onClose = () -> {
+                m.removeFromScene();
+                monitors.remove(m);
+                monitorsTableBuild();
+            };
+            monitor.addToScene();
+            monitors.add(monitor);
+        } else {
+            monitor.hidden = false;
+        }
+        placeMonitorAt(monitor, mousePos);
+        monitorsTableBuild();
+        return monitor;
+    }
+
+    /** 将监视窗口定位于鼠标位置居中处, 按钉住状态同步世界坐标或钳制屏幕范围并置顶聚焦。 */
+    private void placeMonitorAt(Monitor m, Vec2 mousePos) {
+        m.hidden = false;
+        m.pos.set(mousePos.x - m.size.x / 2f, mousePos.y - m.size.y / 2f);
+        if (m.pinned) {
+            m.syncWorldPos();
+        } else {
+            m.clampToScreen();
+        }
+        m.setPosition(m.pos.x, m.pos.y);
+        m.setSize(m.size.x, m.size.y);
+        m.bringToFocus();
+    }
+
+    private Monitor createMonitor(Building building, Vec2 mousePos) {
         if (building instanceof LogicBlock.LogicBuild logicBuild) {
             String x = BigDecimal.valueOf(logicBuild.x / 8).stripTrailingZeros().toPlainString();
             String y = BigDecimal.valueOf(logicBuild.y / 8).stripTrailingZeros().toPlainString();
-            monitor = new LogicMonitor(logicBuild.block.name + "(" + x + ", " + y + ")", logicBuild, Core.input.mouse());
+            LogicMonitor lm = new LogicMonitor(logicBuild.block.name + "(" + x + ", " + y + ")", logicBuild, mousePos);
+            float[] sz = ConfigInjector.prefSize(building);
+            lm.size.set(sz[0], sz[1]);
+            return lm;
         } else if (building instanceof MemoryBlock.MemoryBuild memoryBuild) {
             String x = BigDecimal.valueOf(memoryBuild.x / 8).stripTrailingZeros().toPlainString();
             String y = BigDecimal.valueOf(memoryBuild.y / 8).stripTrailingZeros().toPlainString();
-            monitor = new MemoryMonitor(memoryBuild.block.name + "(" + x + ", " + y + ")", memoryBuild, Core.input.mouse());
+            MemoryMonitor mm = new MemoryMonitor(memoryBuild.block.name + "(" + x + ", " + y + ")", memoryBuild, mousePos);
+            float[] sz = ConfigInjector.prefSize(building);
+            mm.size.set(sz[0], sz[1]);
+            return mm;
         } else if (building instanceof MessageBlock.MessageBuild messageBuild) {
             String x = BigDecimal.valueOf(messageBuild.x / 8).stripTrailingZeros().toPlainString();
             String y = BigDecimal.valueOf(messageBuild.y / 8).stripTrailingZeros().toPlainString();
-            monitor = new MessageMonitor(messageBuild.block.name + "(" + x + ", " + y + ")", messageBuild, Core.input.mouse());
+            MessageMonitor mm = new MessageMonitor(messageBuild.block.name + "(" + x + ", " + y + ")", messageBuild, mousePos);
+            float[] sz = ConfigInjector.prefSize(building);
+            mm.size.set(sz[0], sz[1]);
+            return mm;
         }
-        assert monitor != null;
-        monitor.addToScene();
-        monitors.add(monitor);
-        monitorsTableBuild();
+        return null;
+    }
+    private void closeMain() {
+        hidden = true;
     }
 
     private void monitorsTableBuild() {
@@ -196,15 +258,12 @@ public class Combination extends Yrailiuxa2 {
             } else if (p.hasScroll()) Core.scene.setScrollFocus(null);
             for (MonitorCell monitorCell : monitorCells) {
                 if (Vars.world.build(monitorCell.building.pos()) != monitorCell.building) {
-                    monitorCell.removeFromScene();
+                    monitorCell.removeAndDispose();
                     monitorsTableBuild();
                     return;
                 }
             }
-        }).with(p -> {
-            p.setupFadeScrollBars(0.5f, 0.25f);
-            p.setFadeScrollBars(true);
-        })).grow();
+        }).with(Yrailiuxa2::configurePane)).grow();
     }
 
     private Building getWorldBuild() {
@@ -217,7 +276,7 @@ public class Combination extends Yrailiuxa2 {
         if (building instanceof LogicBlock.LogicBuild logicBuild)
             Core.app.setClipboardText(logicBuild.code);
         else if (building instanceof MemoryBlock.MemoryBuild memoryBuild)
-            Core.app.setClipboardText(JsonIO.write(memoryBuild.memory));
+            Core.app.setClipboardText(MemUtil.toText(memoryBuild));
         else if (building instanceof MessageBlock.MessageBuild messageBuild)
             Core.app.setClipboardText(JsonIO.write(messageBuild.message.toString()));
     }
@@ -229,19 +288,8 @@ public class Combination extends Yrailiuxa2 {
         if (building instanceof LogicBlock.LogicBuild logicBuild) {
             logicBuild.updateCode(clipText.replace("\r\n", "\n"));
         } else if (building instanceof MemoryBlock.MemoryBuild memoryBuild) {
-            try {
-                double[] memory = JsonIO.read(
-                    memoryBuild.memory.getClass(),
-                    clipText
-                );
-                System.arraycopy(
-                    memory,
-                    0,
-                    memoryBuild.memory,
-                    0,
-                    Math.min(memoryBuild.memory.length, memory.length)
-                );
-            } catch (SerializationException ignored) {}
+            //新版内存格可存放对象, 用下标=值的文本格式导出, 同时兼容旧版纯数字 JSON
+            MemUtil.fromText(memoryBuild, clipText.replace("\r\n", "\n"));
         } else if (building instanceof MessageBlock.MessageBuild messageBuild) {
             messageBuild.configure(clipText.replace("\r\n", "\n"));
         }
@@ -254,3 +302,4 @@ public class Combination extends Yrailiuxa2 {
     }
 
 }
+

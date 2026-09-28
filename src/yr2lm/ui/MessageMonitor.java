@@ -2,7 +2,6 @@ package yr2lm.ui;
 
 import arc.Core;
 import arc.math.geom.Vec2;
-import arc.scene.Element;
 import arc.scene.ui.ImageButton;
 import arc.scene.ui.layout.Table;
 import arc.util.Time;
@@ -10,10 +9,17 @@ import mindustry.gen.Icon;
 import mindustry.ui.Styles;
 import mindustry.world.blocks.logic.MessageBlock;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 
+/**
+ * 信息板日志监视窗口。
+ * <p>
+ * 支持实时消息监控、暂停、手动刷新与清空。
+ * 内存与性能保护: 限制最大日志条数(128条)，避免高频逻辑打印导致内存无限膨胀。
+ */
 public class MessageMonitor extends Monitor {
+    private static final int MAX_LOGS = 128;
+
     private final MessageBlock.MessageBuild messageBuild;
     private int mesHash;
     private boolean pause = false;
@@ -32,13 +38,14 @@ public class MessageMonitor extends Monitor {
                     mesCells.remove(this);
                     init();
                 }).size(35).right();
-                t.labelWrap(BigDecimal.valueOf(Math.floor(Time.time) % 10000).stripTrailingZeros().toPlainString()).size(60, 35);
+                t.labelWrap(String.valueOf((int)Time.time % 10000)).size(60, 35);
             }).minHeight(35).growX();
         }
     }
 
     private final ArrayList<MesCell> mesCells;
 
+    @SuppressWarnings("this-escape")
     public MessageMonitor(String text, MessageBlock.MessageBuild messageBuildInit, Vec2 pos) {
         super(text, messageBuildInit, pos);
         messageBuild = messageBuildInit;
@@ -47,11 +54,13 @@ public class MessageMonitor extends Monitor {
         mesCells = new ArrayList<>();
         mesToolsBuild();
         init();
+        size.set(400f, 280f);
+        minSize.set(300f, 200f);
     }
 
     @Override
     public void init() {
-        if (mesCells.size() == 0) mesCells.add(new MesCell(messageBuild.message.toString()));
+        if (mesCells.isEmpty()) mesCells.add(new MesCell(messageBuild.message.toString()));
         monitorTable.clear();
         monitorTable.add(mesTools).growX();
         monitorTable.row();
@@ -61,23 +70,14 @@ public class MessageMonitor extends Monitor {
                 p.add(mesCell).growX();
                 p.row();
             });
-        }).grow().update(p -> {
-            Element e = Core.scene.hit(Core.input.mouseX(), Core.input.mouseY(), true);
-            if (e != null && e.isDescendantOf(p)) p.requestScroll();
-            else if (p.hasScroll()) Core.scene.setScrollFocus(null);
-        }).with(p -> {
-            p.setupFadeScrollBars(0.5f, 0.25f);
-            p.setFadeScrollBars(true);
-            p.setScrollingDisabled(true, false);
-        });
+        }).grow().update(Yrailiuxa2::bindScrollFocus).with(Yrailiuxa2::configurePane);
     }
 
     private void mesToolsBuild() {
         mesTools.clear();
         mesTools.table(t -> {
             ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle(Styles.emptyi);
-            ImageButton drawButton = t.button(Icon.pause, Styles.emptyi, () -> {
-            }).grow().get();
+            ImageButton drawButton = t.button(Icon.pause, Styles.emptyi, () -> {}).grow().get();
             drawButton.clicked(() -> {
                 pause = !pause;
                 style.imageUp = pause ? Icon.play : Icon.pause;
@@ -92,11 +92,25 @@ public class MessageMonitor extends Monitor {
             if (pause) return;
             String message = messageBuild.message.toString();
             if (message.hashCode() != mesHash) {
+                if (mesCells.size() >= MAX_LOGS) {
+                    mesCells.remove(mesCells.size() - 1);
+                }
                 mesCells.add(0, new MesCell(message));
                 mesHash = message.hashCode();
                 init();
             }
         });
+    }
+
+    @Override
+    protected void onResized() {
+        if (attachedPaneMode) {
+            ConfigInjector.paneMesW = size.x;
+            ConfigInjector.paneMesH = size.y;
+        } else {
+            ConfigInjector.lastMesW = size.x;
+            ConfigInjector.lastMesH = size.y;
+        }
     }
 
     @Override
