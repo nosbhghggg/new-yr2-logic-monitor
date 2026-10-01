@@ -105,9 +105,7 @@ public class MemoryMonitor extends Monitor {
                 }
                 init();
             }).size(50).pad(0, 3, 0, 3).get();
-            editBtn.update(() -> {
-                editStyle.imageUp = editMode ? Icon.save : Icon.edit;
-            });
+            editBtn.update(() -> editStyle.imageUp = editMode ? Icon.save : Icon.edit);
         }).height(40).growX();
     }
 
@@ -271,17 +269,6 @@ public class MemoryMonitor extends Monitor {
         @Override
         public void invalidateHierarchy() {
             invalidate();
-        }
-    }
-
-    @Override
-    protected void onResized() {
-        if (attachedPaneMode) {
-            ConfigInjector.paneMemW = size.x;
-            ConfigInjector.paneMemH = size.y;
-        } else {
-            ConfigInjector.lastMemW = size.x;
-            ConfigInjector.lastMemH = size.y;
         }
     }
 

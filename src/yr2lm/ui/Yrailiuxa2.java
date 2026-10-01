@@ -114,7 +114,9 @@ public class Yrailiuxa2 extends Table {
                     if (baseCameraScale <= 0f) {
                         baseCameraScale = currentCameraScale;
                     }
-                    float scl = Mathf.clamp(currentCameraScale / baseCameraScale, 0.2f, 4.0f);
+                    // 缩放钳制 0.05~4.0 (用户定案): 拉近超 4 倍后窗口保持 4 倍大小不再放大, 避免盖满屏幕;
+                    // 拉远到 0.05 下限时窗口停止缩小, 相对世界略微放大, 提示玩家已到全局视野
+                    float scl = Mathf.clamp(currentCameraScale / baseCameraScale, 0.05f, 4.0f);
                     setTransform(true);
                     setScale(scl);
                 } else {
@@ -128,6 +130,7 @@ public class Yrailiuxa2 extends Table {
                 setOrigin(size.x / 2f, showMainTable ? size.y : 30f);
                 tmpVec.set(worldPos);
                 Core.camera.project(tmpVec);
+                //定格＝纯世界锚定: 窗口死死跟着方块投影点走, 跑到屏幕外就自然被裁, 不做任何贴边回弹(与早期一致)
                 pos.set(tmpVec.x - size.x / 2f, tmpVec.y - size.y);
 
                 if (parent != null && Vars.ui != null && Vars.ui.hudGroup != null && Vars.ui.hudGroup.parent == parent) {
@@ -172,8 +175,15 @@ public class Yrailiuxa2 extends Table {
 
     @Override
     public void draw() {
-        // 窗体级裁剪: 极端尺寸下任何内部布局的溢出绘制都被窗口边缘裁住, 绝不污染窗口外的画面
-        if (clipBegin()) {
+        // 窗体级裁剪: 极端尺寸下任何内部布局的溢出绘制都被窗口边缘裁住, 绝不污染窗口外的画面。
+        // 裁剪矩形必须显式计入 setScale: Scene.calculateScissors 用的是布局尺寸 + Draw.trans 全局矩阵,
+        // 并不知道本元素的 setScale — pinned 全息模式下若直接 clipBegin(), 缩放后的窗口会被 1 倍布局框裁掉
+        // (表现为相机拉近时窗口"突然变小/被裁剪")。矩形按 origin 缩放公式计算, s=1 时退化为原始矩形。
+        float s = isTransform() ? Math.max(scaleX, 0.0001f) : 1f;
+        float ox = originX, oy = originY;
+        float cx = x + ox * (1f - s);
+        float cy = y + oy * (1f - s);
+        if (clipBegin(cx, cy, width * s, height * s)) {
             super.draw();
             clipEnd();
         }
@@ -300,10 +310,9 @@ public class Yrailiuxa2 extends Table {
 
             @Override
             public void touchUp(InputEvent event, float x, float y, int pointer, KeyCode button) {
+                // 严禁在此重置 baseCameraScale: 手柄只改窗口尺寸, 缩放基准(钉住/校准那一刻的相机状态)与它无关;
+                // 重置会导致 scl 跳回 1, 表现为"拉一下手柄, 全息缩放比例直接变成当前的"(天坑 #10 的姊妹坑)
                 gripStyle.imageUpColor = Yr2Vars.mutedColor;
-                if (pinned && !lockScale1to1 && Core.camera != null) {
-                    baseCameraScale = Core.graphics.getWidth() / Core.camera.width;
-                }
             }
         });
 

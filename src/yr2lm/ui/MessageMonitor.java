@@ -103,17 +103,6 @@ public class MessageMonitor extends Monitor {
     }
 
     @Override
-    protected void onResized() {
-        if (attachedPaneMode) {
-            ConfigInjector.paneMesW = size.x;
-            ConfigInjector.paneMesH = size.y;
-        } else {
-            ConfigInjector.lastMesW = size.x;
-            ConfigInjector.lastMesH = size.y;
-        }
-    }
-
-    @Override
     public MessageBlock.MessageBuild getBuilding() {
         return messageBuild;
     }

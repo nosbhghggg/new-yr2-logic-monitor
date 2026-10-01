@@ -7,7 +7,6 @@ import arc.graphics.g2d.Fill;
 import arc.graphics.g2d.Lines;
 import arc.input.KeyCode;
 import arc.math.Interp;
-import arc.math.Mathf;
 import arc.scene.Element;
 import arc.scene.actions.Actions;
 import arc.scene.event.InputEvent;
@@ -48,58 +47,29 @@ public class ConfigInjector {
     private static Monitor attachedMonitor = null;
     private static Table attachedHost = null;
 
-    /** 独立浮窗尺寸记忆 (齿轮拖拽创建 / 主界面 add), 按方块类型持久化。 */
-    public static float lastLogicW = -1f, lastLogicH = -1f;
-    public static float lastMemW = -1f, lastMemH = -1f;
-    public static float lastMesW = -1f, lastMesH = -1f;
-    /** 内嵌贴附面板独立尺寸记忆 (单击齿轮展开) — 与浮窗完全分离, 改一个不影响另一个。 */
-    public static float paneLogicW = -1f, paneLogicH = -1f;
-    public static float paneMemW = -1f, paneMemH = -1f;
-    public static float paneMesW = -1f, paneMesH = -1f;
-
-    /** 独立浮窗偏好尺寸。 */
-    public static float[] prefSize(Building selected) {
-        return sizeFor(selected, false);
-    }
-
-    /** 内嵌贴附面板偏好尺寸。 */
-    public static float[] paneSize(Building selected) {
-        return sizeFor(selected, true);
-    }
-
-    /**
-     * 各方块监视窗口的偏好尺寸: 有记忆用记忆, 无记忆按方块类型给默认值。
-     * 浮窗与内嵌面板各寄一套记忆, 三处创建入口 (浮窗创建/齿轮拖拽预览/内嵌面板) 统一走此方法。
-     */
-    private static float[] sizeFor(Building selected, boolean pane) {
-        float w, h;
-        if (selected instanceof LogicBlock.LogicBuild) {
-            float defaultLogicW = Core.graphics.getWidth() >= 860f ? 800f : 540f;
-            w = pane ? (paneLogicW > 0 ? paneLogicW : defaultLogicW) : (lastLogicW > 0 ? lastLogicW : defaultLogicW);
-            h = pane ? (paneLogicH > 0 ? paneLogicH : 520f) : (lastLogicH > 0 ? lastLogicH : 520f);
-        } else if (selected instanceof MemoryBlock.MemoryBuild) {
-            w = pane ? (paneMemW > 0 ? paneMemW : 930f) : (lastMemW > 0 ? lastMemW : 930f);
-            h = pane ? (paneMemH > 0 ? paneMemH : 460f) : (lastMemH > 0 ? lastMemH : 460f);
-        } else {
-            w = pane ? (paneMesW > 0 ? paneMesW : 460f) : (lastMesW > 0 ? lastMesW : 460f);
-            h = pane ? (paneMesH > 0 ? paneMesH : 300f) : (lastMesH > 0 ? lastMesH : 300f);
-        }
-        return new float[]{Math.min(w, Core.graphics.getWidth() - 20f), Math.min(h, Core.graphics.getHeight() - 40f)};
-    }
-
     /** 拖拽齿轮时的落点预览元素。 */
     private static DragPreview dragPreview = null;
+
+    /** 借游戏内部结构接手的几处一旦变形就会静默失灵: 每个位置只往游戏日志记一次, 免得每帧刷。 */
+    private static final arc.struct.ObjectSet<String> warned = new arc.struct.ObjectSet<>();
+
+    private static void warnOnce(String where, Throwable t) {
+        if (warned.add(where)) arc.util.Log.errTag("yr2lm", where + " 失败: " + t);
+    }
 
     static {
         try {
             tableField = BlockConfigFragment.class.getDeclaredField("table");
             tableField.setAccessible(true);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            warnOnce("取游戏配置表字段", t);
+        }
     }
 
     public static void init() {
         if (inited) return;
         inited = true;
+        MonitorFactory.loadSizes();
         Events.run(EventType.Trigger.update, ConfigInjector::update);
     }
 
@@ -146,7 +116,9 @@ public class ConfigInjector {
                 Table t = (Table) tableField.get(config);
                 return t != null && t.visible ? t : null;
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            warnOnce("读游戏配置表", t);
+        }
         return null;
     }
 
@@ -206,7 +178,7 @@ public class ConfigInjector {
                         dragging = true;
                         // 已有监视窗口时预览其真实尺寸, 否则按偏好/默认尺寸
                         Monitor existing = Yr2Vars.combination.getMonitor(selected);
-                        float[] sz = (existing != null) ? new float[]{existing.size.x, existing.size.y} : prefSize(selected);
+                        float[] sz = (existing != null) ? new float[]{existing.size.x, existing.size.y} : MonitorFactory.prefSize(selected);
                         dragPreview = new DragPreview(sz[0], sz[1], selected.block.name);
                         Core.scene.root.addChild(dragPreview);
                     }
@@ -239,9 +211,7 @@ public class ConfigInjector {
                             })
                         );
                     }
-                    try {
-                        Vars.control.input.config.hideConfig();
-                    } catch (Throwable ignored) {}
+                    Vars.control.input.config.hideConfig();
                 } else {
                     // 点击齿轮: 展开/收起内嵌面板
                     toggleAttached(configTable, selected);
@@ -268,19 +238,8 @@ public class ConfigInjector {
 
         attachedBuilding = selected;
 
-        if (selected instanceof LogicBlock.LogicBuild lb) {
-            attachedMonitor = new LogicMonitor(lb.block.name, lb, Core.input.mouse());
-        } else if (selected instanceof MessageBlock.MessageBuild mb) {
-            attachedMonitor = new MessageMonitor(mb.block.name, mb, Core.input.mouse());
-        } else if (selected instanceof MemoryBlock.MemoryBuild mb) {
-            attachedMonitor = new MemoryMonitor(mb.block.name, mb, Core.input.mouse());
-        } else {
-            return;
-        }
-        // 内嵌贴附模式: 尺寸记忆与独立浮窗分离, 改一个不影响另一个
-        attachedMonitor.attachedPaneMode = true;
-        float[] sz = paneSize(selected);
-        attachedMonitor.size.set(sz[0], sz[1]);
+        attachedMonitor = MonitorFactory.create(selected, Core.input.mouse(), true);
+        if (attachedMonitor == null) return;
 
         //构建独立自对齐宿主容器: 纯内容呈现，无外壳、无标题栏
         attachedHost = new Table();
@@ -323,18 +282,8 @@ public class ConfigInjector {
                 attachedHost.setSize(newW, newH);
                 if (attachedMonitor != null) {
                     attachedMonitor.size.set(newW, newH);
-                    // 触发布局重排与分栏比例迁移 (与浮窗手柄 onResized 行为一致)
+                    // 触发布局重排、分栏比例迁移与尺寸记忆持久化 (onResized 内按 attachedPaneMode 写 pane* 记忆)
                     attachedMonitor.onResized();
-                }
-                if (selected instanceof LogicBlock.LogicBuild) {
-                    paneLogicW = newW;
-                    paneLogicH = newH;
-                } else if (selected instanceof MemoryBlock.MemoryBuild) {
-                    paneMemW = newW;
-                    paneMemH = newH;
-                } else if (selected instanceof MessageBlock.MessageBuild) {
-                    paneMesW = newW;
-                    paneMesH = newH;
                 }
             }
 
@@ -346,7 +295,7 @@ public class ConfigInjector {
 
         gripTable.add(grip).size(26f).pad(0f, 0f, 2f, 2f).bottom().right();
         attachedHost.stack(attachedMonitor.mainTable, gripTable).grow();
-        attachedHost.setSize(sz[0], sz[1]);
+        attachedHost.setSize(attachedMonitor.size.x, attachedMonitor.size.y);
 
         //展开平滑缓动动画 (由顶部自然展开)
         attachedHost.setTransform(true);
@@ -396,8 +345,11 @@ public class ConfigInjector {
             try {
                 //若处于单步/暂停态，恢复方块执行，防止处理器被永久卡住
                 attachedMonitor.removeFromScene();
-            } catch (Throwable ignored) {}
-                attachedMonitor = null;
+            } catch (Throwable t) {
+                //这里不能中断后面的清理(否则内嵌面板会永久卡住), 但也不能一声不吭
+                warnOnce("收起内嵌面板", t);
+            }
+            attachedMonitor = null;
         }
         if (attachedHost != null) {
             attachedHost.remove();

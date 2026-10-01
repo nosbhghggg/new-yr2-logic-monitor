@@ -31,8 +31,13 @@ ext{
 }
 
 dependencies{
-    compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
-    compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
+    if(new File("$rootDir/../_libs/arc-core-v160.5.jar").exists()){
+        compileOnly files("$rootDir/../_libs/arc-core-v160.5.jar")
+        compileOnly files("$rootDir/../_libs/core-v160.5.jar")
+    }else{
+        compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
+        compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
+    }
 }
 
 //force arc version

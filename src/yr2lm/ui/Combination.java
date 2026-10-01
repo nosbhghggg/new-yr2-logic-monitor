@@ -19,7 +19,6 @@ import yr2lm.Yr2lmain;
 import yr2lm.graphics.DrawExt;
 import yr2lm.util.MemUtil;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 
 public class Combination extends Yrailiuxa2 {
@@ -211,29 +210,7 @@ public class Combination extends Yrailiuxa2 {
     }
 
     private Monitor createMonitor(Building building, Vec2 mousePos) {
-        if (building instanceof LogicBlock.LogicBuild logicBuild) {
-            String x = BigDecimal.valueOf(logicBuild.x / 8).stripTrailingZeros().toPlainString();
-            String y = BigDecimal.valueOf(logicBuild.y / 8).stripTrailingZeros().toPlainString();
-            LogicMonitor lm = new LogicMonitor(logicBuild.block.name + "(" + x + ", " + y + ")", logicBuild, mousePos);
-            float[] sz = ConfigInjector.prefSize(building);
-            lm.size.set(sz[0], sz[1]);
-            return lm;
-        } else if (building instanceof MemoryBlock.MemoryBuild memoryBuild) {
-            String x = BigDecimal.valueOf(memoryBuild.x / 8).stripTrailingZeros().toPlainString();
-            String y = BigDecimal.valueOf(memoryBuild.y / 8).stripTrailingZeros().toPlainString();
-            MemoryMonitor mm = new MemoryMonitor(memoryBuild.block.name + "(" + x + ", " + y + ")", memoryBuild, mousePos);
-            float[] sz = ConfigInjector.prefSize(building);
-            mm.size.set(sz[0], sz[1]);
-            return mm;
-        } else if (building instanceof MessageBlock.MessageBuild messageBuild) {
-            String x = BigDecimal.valueOf(messageBuild.x / 8).stripTrailingZeros().toPlainString();
-            String y = BigDecimal.valueOf(messageBuild.y / 8).stripTrailingZeros().toPlainString();
-            MessageMonitor mm = new MessageMonitor(messageBuild.block.name + "(" + x + ", " + y + ")", messageBuild, mousePos);
-            float[] sz = ConfigInjector.prefSize(building);
-            mm.size.set(sz[0], sz[1]);
-            return mm;
-        }
-        return null;
+        return MonitorFactory.create(building, mousePos, false);
     }
     private void closeMain() {
         hidden = true;
