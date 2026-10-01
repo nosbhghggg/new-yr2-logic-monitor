@@ -1,6 +1,5 @@
 # yr2-logic-monitor
 
-> **Version 1.6.0** · Mindustry v160.5 · desktop & Android merged jar · CI 自动构建双端合一包(推送后自动触发)
 
 这是一个 Mindustry 逻辑辅助模组。
 This is a Mindustry logic-assistance mod.
