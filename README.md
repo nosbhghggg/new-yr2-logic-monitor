@@ -5,6 +5,7 @@
 这是一个 Mindustry 逻辑辅助模组。
 This is a Mindustry logic-assistance mod.
 
+
 - Logic Monitor — real-time logic & hardware inspector.
 - QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
 
@@ -28,8 +29,8 @@ This is a Mindustry logic-assistance mod.
   - Persistent entity tracer line
   - Toggle page: variables / editor
   - Search: Filter variable names
-  - [Cc]: Case-sensitive
-  - [W]: Whole-word match
+  - \[Cc\] Case-sensitive toggle
+  - \[W\] Whole-word match toggle
   - textBuffer: Print-buffer monitor
 - Code Editor:
   - Reload block code
@@ -42,14 +43,14 @@ This is a Mindustry logic-assistance mod.
 - Trace Timeline:
   - Export trace log
   - Clear trace history
-  - [L.. -> L..]: Auto-collapse sequential steps
+  - \[L.. -> L..\] Auto-collapse sequential steps
   - Diff: Mark jumps & multi-variable changes
   - Click a step: Time-travel snapshot rollback
-  - [<<] step#: Current snapshot indicator
+  - \[<<\] step#: Current snapshot indicator
   - Restore real-time state
 - Code Line:
   - Click line head: Toggle breakpoint
-  - >> arrow: Live execution pointer
+  - \>\> arrow: Live execution pointer
   - Aurora-green bar: Paused highlight & trail
   - 5 micro edit buttons (non-trace mode):
     - Inline edit this line
@@ -83,7 +84,7 @@ This is a Mindustry logic-assistance mod.
 - Close window safely
 - Corner drag-resize with size memory
 - Gear injection & spawn from config bar
-- [y] Aurora-green button: Bottom-right reopen
+- \[y\] Aurora-green button: Bottom-right reopen
 - Dual-end: Built-in classes.dex, all-platform jar
 
 ## 功能介绍(中文)
@@ -109,8 +110,8 @@ This is a Mindustry logic-assistance mod.
   - 全局常驻实体引线
   - 切换变量表/编辑器
   - 搜索框: 过滤变量名
-  - [Cc]: 区分大小写
-  - [W]: 全词匹配
+  - \[Cc\] 区分大小写开关
+  - \[W\] 全词匹配开关
   - textBuffer: 打印缓冲区监控
 - 编辑器:
   - 重新读取方块代码
@@ -123,14 +124,14 @@ This is a Mindustry logic-assistance mod.
 - 智能流水时序:
   - 导出时序追踪日志
   - 清空流水历史记录
-  - [L.. -> L..]: 顺序步自动折叠
+  - \[L.. -> L..\] 顺序步自动折叠
   - Diff 差分: 跳转与多变量突变标记
   - 点击单步: 时间旅行快照历史回溯
-  - [<<] 步号: 当前快照指示
+  - \[<<\] 步号: 当前快照指示
   - 恢复实时运行状态
 - 代码行:
   - 单击行首: 切换代码行断点
-  - >> 箭头: 运行态实时执行指针
+  - \>\> 箭头: 运行态实时执行指针
   - 极光绿条: 暂停态停驻高亮与光轨
   - 5 个微型编辑按键 (非流水模式):
     - 单行就地编辑
@@ -164,5 +165,5 @@ This is a Mindustry logic-assistance mod.
 - 安全关闭监视窗口
 - 右下角微型拖拽缩放并记忆尺寸
 - 配置条追加齿轮,单击展开,拖拽唤出
-- [y] 极光绿按钮: 右下角常驻唤出
+- \[y\] 极光绿按钮: 右下角常驻唤出
 - 双端合一: 内置 classes.dex 全平台通用
