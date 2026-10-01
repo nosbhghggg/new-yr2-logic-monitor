@@ -9,6 +9,8 @@ This is a Mindustry logic-assistance mod.
 - Logic Monitor — real-time logic & hardware inspector.
 - QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
 
+Language / 语言: English · **[中文说明](#功能介绍中文)**
+
 ## Features
 
 ### 1. Main window (yr2lm)
