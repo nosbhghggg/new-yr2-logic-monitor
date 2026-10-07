@@ -1,0 +1,37 @@
+# ---- Gradle build output ----
+build/
+out/
+.gradle/
+local.properties
+*.class
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*~
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Logs / temp ----
+logs/
+*.log
+hs_err_pid*
+replay_pid*
+crash-report-*
+.attach_*
+*.tmp
+*.bak
+
+# ---- 根目录构建产物 jar (不入库) ----
+/*.jar
+
+# ---- 内部协作文档 (本地保留, 不入远端仓库) ----
+/交接文档.md
+/代码详解.md

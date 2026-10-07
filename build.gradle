@@ -1,0 +1,109 @@
+apply plugin: "java"
+
+version '1.0'
+
+sourceSets.main.java.srcDirs = ["src"]
+
+repositories{
+    mavenCentral()
+    maven{ url 'https://www.jitpack.io' }
+}
+
+tasks.withType(JavaCompile){
+    options.encoding = "UTF-8"
+    //游戏运行在 Java 17 上, 固定 release 以免用到更高版本的 API
+    options.release = 17
+    options.compilerArgs = ["-Xlint:all"]
+}
+
+java{
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+ext{
+    //本模组适配的游戏版本(v146 -> v160.5)
+    mindustryVersion = 'v160.5'
+    modName = 'yr2-logic-monitor'
+    //windows sucks
+    isWindows = System.getProperty("os.name").toLowerCase().contains("windows")
+    sdkRoot = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+}
+
+dependencies{
+    if(new File("$rootDir/../_libs/arc-core-v160.5.jar").exists()){
+        compileOnly files("$rootDir/../_libs/arc-core-v160.5.jar")
+        compileOnly files("$rootDir/../_libs/core-v160.5.jar")
+    }else{
+        compileOnly "com.github.Anuken.Arc:arc-core:$mindustryVersion"
+        compileOnly "com.github.Anuken.Mindustry:core:$mindustryVersion"
+    }
+}
+
+//force arc version
+configurations.all{
+    resolutionStrategy.eachDependency{ details ->
+        if(details.requested.group == 'com.github.Anuken.Arc'){
+            details.useVersion "$mindustryVersion"
+        }
+    }
+}
+
+tasks.register('jarAndroid'){
+    dependsOn "jar"
+
+    doLast{
+        if(!sdkRoot || !new File(sdkRoot).exists()) throw new GradleException("No valid Android SDK found. Ensure that ANDROID_HOME is set to your Android SDK directory.")
+
+        def platformRoot = new File("$sdkRoot/platforms/").listFiles().sort().reverse().find{ f -> new File(f, "android.jar").exists()}
+
+        if(!platformRoot) throw new GradleException("No android.jar found. Ensure that you have an Android platform installed.")
+
+        //collect dependencies needed for desugaring
+        def classPaths = configurations.compileClasspath.asList() + configurations.runtimeClasspath.asList() + [new File(platformRoot, "android.jar")]
+
+        def buildTools = new File("$sdkRoot/build-tools/").listFiles()?.sort()?.reverse()?.find{ f -> new File(f, isWindows ? "d8.bat" : "d8").exists() }
+        def d8 = buildTools ? new File(buildTools, isWindows ? "d8.bat" : "d8").absolutePath : (isWindows ? "d8.bat" : "d8")
+
+        //用参数列表而非拼接字符串, 避免路径里的空格把命令拆断
+        List<String> command = new ArrayList<String>()
+        command.add(d8)
+        classPaths.each{ command.add("--classpath"); command.add(it.path) }
+        command.add("--min-api"); command.add("14")
+        command.add("--output"); command.add(modName + "Android.jar")
+        command.add(modName + "Desktop.jar")
+
+        def builder = new ProcessBuilder(command.toArray(new String[0]))
+        builder.directory(file("$buildDir/libs"))
+        builder.redirectErrorStream(true)
+        def process = builder.start()
+        process.inputStream.eachLine{ println it }
+        def code = process.waitFor()
+        if(code != 0) throw new GradleException("d8 failed with exit code $code")
+    }
+}
+
+jar{
+    archiveFileName = "${modName}Desktop.jar"
+
+    from(rootDir){
+        include "mod.hjson"
+    }
+
+    from("assets/"){
+        include "**"
+    }
+}
+
+tasks.register('deploy', Jar){
+    dependsOn "jarAndroid"
+    dependsOn "jar"
+    archiveFileName = "${modName}.jar"
+
+    from{ [zipTree("$buildDir/libs/${modName}Desktop.jar"), zipTree("$buildDir/libs/${modName}Android.jar")] }
+
+    doLast{
+        delete "$buildDir/libs/${modName}Desktop.jar"
+        delete "$buildDir/libs/${modName}Android.jar"
+    }
+}
