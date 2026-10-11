@@ -77,6 +77,8 @@ public class ConfigInjector {
     public static void update() {
         if (!Vars.state.isGame()) {
             closeAttached();
+            Element orphan = Core.scene == null ? null : Core.scene.find("yr2lm-reopen-button");
+            if (orphan != null) orphan.remove();
             return;
         }
 
@@ -324,8 +326,7 @@ public class ConfigInjector {
         }
     }
 
-    /** 检查并在右下角建筑/蓝图栏注入 "y" 图标按钮，用于在主窗口隐藏时重新唤出。 */
-    /** 递归取容器内第一个原生按钮 (跳过自身浮标), 供 y 浮标做尺寸自适应。 */
+    /** 递归取容器内第一个原生按钮 (跳过自身浮标), 供 y 浮标做尺寸自适应与基准对齐。 */
     private static Button findFirstButton(Element root) {
         if (root.name != null && root.name.equals("yr2lm-reopen-button")) return null;
         if (root instanceof Button b) return b;
@@ -347,8 +348,8 @@ public class ConfigInjector {
             return;
         }
 
-        // y 浮标挂场景根而非 inputTable 布局流: 48px 按钮塞进原生多行表格会撑高网格行,
-        // 在 MindustryX 自定义选择篮宽高时放大为分类框空白(天坑 #21)。挂根后每帧贴位, 布局零干扰。
+        // y 浮标挂场景根而非 inputTable 布局流: 避免破坏原生与 MindustryX 自定义高宽网格排版(天坑 #21)。
+        // 挂根后每帧贴位在原生功能按钮栏左侧外沿, 与原生按钮并排齐平, 彻底避开手机端右侧动态对勾键冲突。
         Element existing = Core.scene.find("yr2lm-reopen-button");
         if (existing == null) {
             Button yBtn = new Button(Styles.clearNonei);
@@ -365,23 +366,34 @@ public class ConfigInjector {
                 }
             });
             yBtn.visible(() -> Vars.state.isGame() && Yr2Vars.combination.hidden
-                    && Core.scene.find("inputTable") != null);
+                    && Core.scene != null
+                    && Core.scene.findVisible("inputTable") != null);
             Core.scene.add(yBtn);
         }
 
-        // 每帧贴位 + 尺寸自适应: 取选择篮内第一个原生按钮的实际尺寸, y 浮标与旁边的按钮永远等大
-        // (MindustryX 调整宽高时原生按钮尺寸可能变, 每帧读即自动跟随)
+        // 每帧贴位 + 尺寸自适应: 取选择篮内第一个原生按钮的实际尺寸与基准线,
+        // 贴靠在原生按钮条最左侧按钮的外沿 (向左偏移 bw + 4px), 绝不遮挡右侧的原生按钮或动态对勾键
         Element yBtn = Core.scene.find("yr2lm-reopen-button");
         if (yBtn != null) {
             Button ref = findFirstButton(inputTable);
             float bw = ref != null && ref.getWidth() > 8f ? ref.getWidth() : 48f;
             float bh = ref != null && ref.getHeight() > 8f ? ref.getHeight() : 48f;
             yBtn.setSize(bw, bh);
-            // inputTable.x/y 是父容器相对坐标 — MindustryX 改造过 HUD 后并不等于屏幕坐标;
-            // 必须经 localToStageCoordinates 走完整变换链取真实屏幕位置 (天坑 #22)
-            arc.math.geom.Vec2 bl = inputTable.localToStageCoordinates(new arc.math.geom.Vec2(0f, 0f));
-            arc.math.geom.Vec2 tr = inputTable.localToStageCoordinates(new arc.math.geom.Vec2(inputTable.getWidth(), inputTable.getHeight()));
-            yBtn.setPosition(tr.x - bw - 2f, bl.y + 2f, Align.bottomLeft);
+
+            float targetX, targetY;
+            if (ref != null && ref.getWidth() > 8f) {
+                // 以选择篮内第一个原生按钮的屏幕物理坐标为锚点, 基准线与高度完美齐平
+                arc.math.geom.Vec2 refPos = ref.localToStageCoordinates(new arc.math.geom.Vec2(0f, 0f));
+                targetX = refPos.x - bw - 4f;
+                targetY = refPos.y;
+            } else {
+                // 尚未完成首轮测量时的兜底: 沿 inputTable 左下角外沿贴靠
+                arc.math.geom.Vec2 bl = inputTable.localToStageCoordinates(new arc.math.geom.Vec2(0f, 0f));
+                targetX = bl.x - bw - 4f;
+                targetY = bl.y + 2f;
+            }
+            targetX = Math.max(4f, targetX);
+            yBtn.setPosition(targetX, targetY, Align.bottomLeft);
         }
     }
 
