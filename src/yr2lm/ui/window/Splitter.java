@@ -1,11 +1,9 @@
-package yr2lm.ui;
+package yr2lm.ui.window;
 
-import arc.Core;
 import arc.func.Cons;
 import arc.graphics.g2d.Draw;
 import arc.graphics.g2d.Fill;
 import arc.input.KeyCode;
-import arc.scene.Element;
 import arc.scene.event.InputEvent;
 import arc.scene.event.InputListener;
 import arc.scene.event.Touchable;
@@ -24,12 +22,12 @@ public class Splitter extends Table {
     public Splitter(Cons<Float> onDrag, Runnable onReset, Runnable onRelease) {
         touchable = Touchable.enabled;
         addListener(new InputListener() {
-            float startMouseX;
+            float startStageX;
             long lastClickTime = 0;
 
             @Override
             public boolean touchDown(InputEvent event, float x, float y, int pointer, KeyCode button) {
-                startMouseX = Core.input.mouseX();
+                startStageX = Yr2Vars.mouseX();
                 isDown = true;
                 moved = false;
                 long now = Time.millis();
@@ -46,9 +44,9 @@ public class Splitter extends Table {
 
             @Override
             public void touchDragged(InputEvent event, float x, float y, int pointer) {
-                float curMouseX = Core.input.mouseX();
-                float dx = curMouseX - startMouseX;
-                startMouseX = curMouseX;
+                float curStageX = Yr2Vars.mouseX();
+                float dx = curStageX - startStageX;
+                startStageX = curStageX;
                 if (dx != 0f) moved = true;
                 onDrag.get(dx);
             }
@@ -64,8 +62,7 @@ public class Splitter extends Table {
     @Override
     public void draw() {
         super.draw();
-        Element h = Core.scene.hit(Yr2Vars.mouseX(), Yr2Vars.mouseY(), true);
-        boolean hover = (h != null && (h == this || h.isDescendantOf(this)));
+        boolean hover = Yr2Vars.isHovered(this);
         if (isDown || hover) {
             Draw.color(Yr2Vars.themeColor, isDown ? 0.22f : 0.10f);
             Fill.rect(x + width / 2f, y + height / 2f, width, height);

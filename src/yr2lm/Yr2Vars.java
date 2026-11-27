@@ -2,10 +2,19 @@ package yr2lm;
 
 import arc.Core;
 import arc.graphics.Color;
-import yr2lm.ui.Combination;
+import arc.math.geom.Vec2;
+import arc.scene.Element;
+import arc.scene.ui.ScrollPane;
+import yr2lm.ui.inject.Combination;
 
+/**
+ * 全局状态、语义色彩系统、Scene 逻辑坐标系与 O(1) 悬停/滚轮焦点工具集。
+ * <p>
+ * 纯净无 i18n、无任何悬浮提示或 Toast 弹窗，保持 100% 原生图标交互风格。
+ */
 public class Yr2Vars {
-    public static final Combination combination = new Combination();
+    /** 延迟在 ClientLoadEvent 中初始化，杜绝类加载期强引用 Vars.mods / Styles 引发的 NPE 风险。 */
+    public static Combination combination;
 
     /**
      * 全局语义色彩系统:
@@ -26,7 +35,17 @@ public class Yr2Vars {
     public static final Color mutedColor = Color.valueOf("7e8c9a");
     public static final String mutedHex = "7e8c9a";
 
-    // ---- Scene 逻辑坐标系工具 (物理像素 / UI 缩放): 所有窗口坐标与屏幕判定必须使用本组方法 ----
+    private static final Vec2 stageTmp = new Vec2();
+
+    public static synchronized Combination ensureCombination() {
+        if (combination == null) {
+            combination = new Combination();
+        }
+        return combination;
+    }
+
+    // ---- Scene 逻辑坐标系与 O(1) 悬停工具: 所有窗口坐标与屏幕判定必须使用本组方法 ----
+
     /** Scene 逻辑宽 (随游戏内 UI 缩放变化)。 */
     public static float sceneW() {
         return Core.scene == null ? Core.graphics.getWidth() : Core.scene.getWidth();
@@ -37,18 +56,92 @@ public class Yr2Vars {
         return Core.scene == null ? Core.graphics.getHeight() : Core.scene.getHeight();
     }
 
-    /** 鼠标 X (换算至 Scene 逻辑坐标系; 物理坐标直接喂 scene.hit/窗口计算会在 UI 缩放 != 1 时错位)。 */
+    /** 鼠标 X (换算至 Scene Stage 逻辑坐标系; 兼容任意 UI 缩放比例与窗口 Margin)。 */
     public static float mouseX() {
-        return ratio() * Core.input.mouseX();
+        if (Core.scene == null) return Core.input.mouseX();
+        return Core.scene.screenToStageCoordinates(stageTmp.set(Core.input.mouseX(), Core.input.mouseY())).x;
     }
 
-    /** 鼠标 Y (Scene 逻辑系)。 */
+    /** 鼠标 Y (Scene Stage 逻辑坐标系)。 */
     public static float mouseY() {
-        return ratio() * Core.input.mouseY();
+        if (Core.scene == null) return Core.input.mouseY();
+        return Core.scene.screenToStageCoordinates(stageTmp.set(Core.input.mouseX(), Core.input.mouseY())).y;
     }
 
-    private static float ratio() {
+    /** 获取当前鼠标在 Scene Stage 逻辑坐标系下的向量副本。 */
+    public static Vec2 mouseStage(Vec2 out) {
+        out.set(Core.input.mouseX(), Core.input.mouseY());
+        if (Core.scene != null) {
+            Core.scene.screenToStageCoordinates(out);
+        }
+        return out;
+    }
+
+    /**
+     * 世界坐标 -> Scene Stage 逻辑坐标。
+     * 修复窗口钉在世界上 (Pinned) 时在 UI 缩放 != 100% 下的位置漂移。
+     */
+    public static void worldToStage(float worldX, float worldY, Vec2 out) {
+        out.set(worldX, worldY);
+        if (Core.camera != null) {
+            Core.camera.project(out);
+        }
+        screenPhysToStage(out);
+    }
+
+    /**
+     * 屏幕物理像素坐标 (左下角原点, 如 Core.input.mouseX/Y 或 Camera.project) -> Scene Stage 逻辑坐标。
+     */
+    public static void screenPhysToStage(Vec2 inOut) {
         float physW = Core.graphics.getWidth();
-        return physW > 0 ? sceneW() / physW : 1f;
+        float physH = Core.graphics.getHeight();
+        if (Core.scene != null && physW > 0 && physH > 0) {
+            inOut.x = (inOut.x / physW) * Core.scene.getWidth() - Core.scene.marginLeft;
+            inOut.y = (inOut.y / physH) * Core.scene.getHeight() - Core.scene.marginBottom;
+        }
+    }
+
+    /**
+     * Scene Stage 逻辑坐标 -> 屏幕物理像素坐标 (左下角原点, 供 Camera.unproject 使用)。
+     */
+    public static void stageToScreenPhys(Vec2 inOut) {
+        float physW = Core.graphics.getWidth();
+        float physH = Core.graphics.getHeight();
+        if (Core.scene != null && Core.scene.getWidth() > 0 && Core.scene.getHeight() > 0) {
+            inOut.x = ((inOut.x + Core.scene.marginLeft) / Core.scene.getWidth()) * physW;
+            inOut.y = ((inOut.y + Core.scene.marginBottom) / Core.scene.getHeight()) * physH;
+        }
+    }
+
+    /**
+     * O(1) 获取当前帧鼠标悬停元素。
+     * 直接复用 Arc Scene.act() 已计算好的 mouseOverElement 缓存，零场景树 hit() 开销。
+     */
+    public static Element hoverElement() {
+        if (Core.scene == null) return null;
+        Element cached = Core.scene.getHoverElement();
+        return cached != null ? cached : Core.scene.hit(mouseX(), mouseY(), true);
+    }
+
+    /** O(1) 判断目标元素或其子元素当前是否被鼠标悬停。 */
+    public static boolean isHovered(Element container) {
+        if (container == null) return false;
+        Element h = hoverElement();
+        return h != null && (h == container || h.isDescendantOf(container));
+    }
+
+    /**
+     * 精准绑定与释放滚动焦点:
+     * 1. 当鼠标移入本 ScrollPane 时，申请滚轮焦点 (pane.requestScroll())；
+     * 2. 当鼠标移出本 ScrollPane (例如移到外部世界地图上) 且当前全局滚轮焦点仍被本 ScrollPane 占用时，
+     *    立即调用 Core.scene.setScrollFocus(null) 归还滚轮控制权，确保玩家在面板外滚动鼠标能立即丝滑缩放地图！
+     */
+    public static void bindScrollFocus(ScrollPane pane) {
+        if (pane == null || Core.scene == null) return;
+        if (isHovered(pane)) {
+            pane.requestScroll();
+        } else if (Core.scene.getScrollFocus() == pane) {
+            Core.scene.setScrollFocus(null);
+        }
     }
 }

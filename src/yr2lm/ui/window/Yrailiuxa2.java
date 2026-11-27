@@ -1,4 +1,4 @@
-package yr2lm.ui;
+package yr2lm.ui.window;
 
 import arc.Core;
 import arc.graphics.Color;
@@ -17,47 +17,50 @@ import arc.scene.ui.Slider;
 import arc.scene.ui.TextField;
 import arc.scene.ui.layout.Table;
 import arc.util.Align;
+import arc.util.Time;
 import mindustry.Vars;
 import mindustry.gen.Icon;
 import mindustry.ui.Styles;
 import yr2lm.Yr2Vars;
 
 /**
- * 监视窗口基类。
+ * 监视窗口基类 (统一托管【独立浮窗模式】与【配置栏下方内嵌面板模式】)。
  * <p>
- * 核心架构特性:
- * 1. 窗口生命周期与世界投影锚定 (Pinned to World): 锚点居于窗口顶部居中 (Top-Center)，图层置于 HUD 之下不遮挡玩家 UI；
- * 2. 缩放职责彻底解耦: 右下角微型手柄专司自由拉伸尺寸，右上角按钮专司【全息随镜缩放 / 1:1 UI 像素锁定】模式切换；
- * 3. 彻底废除 30px 黑粗边框，界面纯净通透；
- * 4. 防焦点吞噬拖拽判定与按比例屏幕自适应迁移。
+ * 核心修复:
+ * 1. `pos`、`size`、`minSize` 声明为 `public` (`bias` 保持 `protected`)，解决跨子包 (`ui.inject`) 访问编译错误；
+ * 2. 修复 Arc `Table.button(icon, style, listener)` 内部 `new ImageButtonStyle(stylen)` 克隆样式导致外部修改 `style.imageUp` 失效的 Bug:
+ *    所有动态切换图标的按钮一律修改 `btn.getStyle().imageUp` 与 `btn.getStyle().imageUpColor`；
+ * 3. 三态锁合一按钮 (`Icon.lockOpenSmall` 未锁定 -> `Icon.lockSmall` 锁定并随镜缩放 -> `Icon.zoomSmall` 锁定1:1)。
  */
 public class Yrailiuxa2 extends Table {
+    /** 三态锁常量: 0 = 未锁定, 1 = 锁定(1:1固定大小), 2 = 锁定并随镜头缩放。 */
+    public static final int PIN_NONE = 0;
+    public static final int PIN_LOCKED_1TO1 = 1;
+    public static final int PIN_LOCKED_ZOOM = 2;
+
     private final Table headTable;
     private final Table gripTable;
-    protected final Table mainTable;
-    protected final Vec2 pos, size, bias;
-    protected final Vec2 minSize;
+    public final Table mainTable;
+    public final Vec2 pos, size;
+    protected final Vec2 bias;
+    public final Vec2 minSize;
     public boolean hidden = false;
 
-    /** 是否固定在世界上（世界坐标系，跟随地图移动与缩放）。 */
+    /** 当前锁定状态 (0: 未锁定, 1: 锁定1:1, 2: 锁定并缩放)。 */
+    public int pinState = PIN_NONE;
+
+    /** 是否处于锁定在世界上的状态 (状态 1 或 状态 2)。 */
     public boolean pinned = false;
 
-    /** 内嵌贴附模式 (单击齿轮展开的原生配置条下方面板): 尺寸记忆与独立浮窗完全分离, 互不污染。 */
+    /** 内嵌贴附模式 (单击齿轮展开的原生配置条下方面板): 无标题栏、居中对称拉伸、尺寸记忆与浮窗分离。 */
     public boolean attachedPaneMode = false;
-
-    /** 钉在世界上时是否锁定为固定 1:1 UI 像素大小 (不跟随镜头视野缩放)。默认 false (全息随镜)。 */
-    public boolean lockScale1to1 = false;
 
     /** 窗口钉在世界上时的世界坐标（锚定在窗口最上方中间点 Top-Center）。 */
     protected final Vec2 worldPos = new Vec2();
 
-    /** 内部复用的计算临时向量，避免被全局 tmpVector 污染覆盖。 */
     private final Vec2 tmpVec = new Vec2();
-
-    /** 是否提供图钉按钮。 */
     protected boolean pinnable;
 
-    private Runnable onPinChanged;
     public Runnable onClose;
     private boolean showMainTable = true;
     private float lastScreenW = -1f, lastScreenH = -1f;
@@ -92,6 +95,7 @@ public class Yrailiuxa2 extends Table {
 
             @Override
             public boolean touchDown(InputEvent event, float xDown, float yDown, int pointer, KeyCode button) {
+                if (attachedPaneMode) return false;
                 bringToFocus();
                 if (!blankDraggable(event.targetActor)) return false;
                 downX = xDown;
@@ -101,23 +105,27 @@ public class Yrailiuxa2 extends Table {
 
             @Override
             public void touchDragged(InputEvent event, float xDragged, float yDragged, int pointer) {
-                // 本地坐标差必须乘回元素缩放才是屏幕像素差: 全息随镜 setScale 下, 事件本地坐标已被 scale 除过,
-                // 直接加进屏幕坐标的 pos 会单位失配 —— 拉远(scl<1)时拖动以 1/scl 倍速振荡发散(疯狂抽搐+飞跑, 天坑 #20)
+                if (attachedPaneMode) return;
                 pos.add((xDragged - downX) * scaleX, (yDragged - downY) * scaleY);
                 if (pinned) syncWorldPos();
+                applyBoundsNow();
             }
         });
 
         update(() -> {
+            if (attachedPaneMode) {
+                setSize(size.x, size.y);
+                onUpdate();
+                return;
+            }
+
             float screenW = Yr2Vars.sceneW(), screenH = Yr2Vars.sceneH();
             if (pinned && Core.camera != null) {
                 float currentCameraScale = Core.graphics.getWidth() / Core.camera.width;
-                if (!lockScale1to1) {
+                if (pinState == PIN_LOCKED_ZOOM) {
                     if (baseCameraScale <= 0f) {
                         baseCameraScale = currentCameraScale;
                     }
-                    // 缩放钳制 0.05~4.0 (用户定案): 拉近超 4 倍后窗口保持 4 倍大小不再放大, 避免盖满屏幕;
-                    // 拉远到 0.05 下限时窗口停止缩小, 相对世界略微放大, 提示玩家已到全局视野
                     float scl = Mathf.clamp(currentCameraScale / baseCameraScale, 0.05f, 4.0f);
                     setTransform(true);
                     setScale(scl);
@@ -130,9 +138,7 @@ public class Yrailiuxa2 extends Table {
                 }
 
                 setOrigin(size.x / 2f, showMainTable ? size.y : 30f);
-                tmpVec.set(worldPos);
-                Core.camera.project(tmpVec);
-                //定格＝纯世界锚定: 窗口死死跟着方块投影点走, 跑到屏幕外就自然被裁, 不做任何贴边回弹(与早期一致)
+                Yr2Vars.worldToStage(worldPos.x, worldPos.y, tmpVec);
                 pos.set(tmpVec.x - size.x / 2f, tmpVec.y - size.y);
 
                 if (parent != null && Vars.ui != null && Vars.ui.hudGroup != null && Vars.ui.hudGroup.parent == parent) {
@@ -156,31 +162,44 @@ public class Yrailiuxa2 extends Table {
                     minSize.x = Math.min(minSize.x, size.x);
                     minSize.y = Math.min(minSize.y, size.y);
                 }
-                pos.x = Mathf.clamp(pos.x, 30f - size.x, Yr2Vars.sceneW() - 30f);
-                pos.y = Mathf.clamp(pos.y, 30f - size.y, Yr2Vars.sceneH() - size.y);
+                pos.x = Mathf.clamp(pos.x, 30f - size.x, screenW - 30f);
+                pos.y = Mathf.clamp(pos.y, 30f - size.y, screenH - size.y);
             }
             lastScreenW = screenW;
             lastScreenH = screenH;
 
-            if (showMainTable) {
-                setPosition(pos.x, pos.y);
-                setSize(size.x, size.y);
-            } else {
-                setPosition(pos.x, pos.y + size.y - 30f);
-                setSize(size.x, 30f);
-            }
+            applyBoundsNow();
             onUpdate();
         });
+    }
+
+    public void applyBoundsNow() {
+        if (attachedPaneMode) {
+            setSize(size.x, size.y);
+            validate();
+            return;
+        }
+        if (showMainTable) {
+            setPosition(pos.x, pos.y);
+            setSize(size.x, size.y);
+        } else {
+            setPosition(pos.x, pos.y + size.y - 30f);
+            setSize(size.x, 30f);
+        }
+        validate();
+    }
+
+    public void setAttachedPaneMode(boolean attached) {
+        if (this.attachedPaneMode == attached) return;
+        this.attachedPaneMode = attached;
+        margin(attached ? 4f : 0f);
+        mainTableBuild();
     }
 
     protected void onUpdate() {}
 
     @Override
     public void draw() {
-        // 窗体级裁剪: 极端尺寸下任何内部布局的溢出绘制都被窗口边缘裁住, 绝不污染窗口外的画面。
-        // 裁剪矩形必须显式计入 setScale: Scene.calculateScissors 用的是布局尺寸 + Draw.trans 全局矩阵,
-        // 并不知道本元素的 setScale — pinned 全息模式下若直接 clipBegin(), 缩放后的窗口会被 1 倍布局框裁掉
-        // (表现为相机拉近时窗口"突然变小/被裁剪")。矩形按 origin 缩放公式计算, s=1 时退化为原始矩形。
         float s = isTransform() ? Math.max(scaleX, 0.0001f) : 1f;
         float ox = originX, oy = originY;
         float cx = x + ox * (1f - s);
@@ -191,21 +210,37 @@ public class Yrailiuxa2 extends Table {
         }
     }
 
-    /** 窗口尺寸被拖拽调节后的回调钩子。 */
     protected void onResized() {}
 
-    public void togglePinned() {
-        setPinned(!pinned);
+    /** 在【未锁定 -> 锁定并缩放(放大镜) -> 锁定(1:1)】三态之间循环切换。 */
+    public void cyclePinState() {
+        setPinState(switch (pinState) {
+            case PIN_NONE -> PIN_LOCKED_ZOOM;
+            case PIN_LOCKED_ZOOM -> PIN_LOCKED_1TO1;
+            default -> PIN_NONE;
+        });
     }
 
-    public void setPinned(boolean p) {
-        if (this.pinned == p) return;
-        this.pinned = p;
-        if (p) {
-            syncWorldPos();
-            bringToFocus();
-            if (!lockScale1to1 && Core.camera != null) {
+    public void setPinState(int newState) {
+        int clamped = Mathf.clamp(newState, PIN_NONE, PIN_LOCKED_ZOOM);
+        if (this.pinState == clamped) return;
+        boolean wasPinned = this.pinned;
+        this.pinState = clamped;
+        this.pinned = (clamped != PIN_NONE);
+
+        if (this.pinned) {
+            if (!wasPinned) {
+                syncWorldPos();
+                bringToFocus();
+            }
+            if (clamped == PIN_LOCKED_ZOOM && Core.camera != null) {
                 baseCameraScale = Core.graphics.getWidth() / Core.camera.width;
+            } else {
+                if (scaleX != 1f || scaleY != 1f) {
+                    setScale(1f);
+                    setTransform(false);
+                }
+                baseCameraScale = -1f;
             }
         } else {
             toFront();
@@ -215,7 +250,6 @@ public class Yrailiuxa2 extends Table {
             }
             baseCameraScale = -1f;
         }
-        if (onPinChanged != null) onPinChanged.run();
     }
 
     public void bringToFocus() {
@@ -235,6 +269,7 @@ public class Yrailiuxa2 extends Table {
     public void syncWorldPos() {
         if (Core.camera == null) return;
         tmpVec.set(pos.x + size.x / 2f, pos.y + size.y);
+        Yr2Vars.stageToScreenPhys(tmpVec);
         Core.camera.unproject(tmpVec);
         worldPos.set(tmpVec);
     }
@@ -248,17 +283,19 @@ public class Yrailiuxa2 extends Table {
                 blankPane = pane;
             }
         }
-        if (blankPane != null) Core.scene.cancelTouchFocus(blankPane);
+        if (blankPane != null && Core.scene != null) Core.scene.cancelTouchFocus(blankPane);
         return true;
     }
 
     private void mainTableBuild() {
         clear();
         top();
-        add(headTable).height(30).growX();
-        if (!showMainTable) return;
-        row();
-        stack(mainTable, gripTable).grow();
+        if (!attachedPaneMode) {
+            add(headTable).height(30).minWidth(0f).growX();
+            if (!showMainTable) return;
+            row();
+        }
+        stack(mainTable, gripTable).minWidth(0f).minHeight(0f).grow();
     }
 
     private void gripTableInit() {
@@ -266,55 +303,57 @@ public class Yrailiuxa2 extends Table {
         gripTable.bottom().right();
         gripTable.touchable = Touchable.childrenOnly;
 
-        ImageButton.ImageButtonStyle gripStyle = new ImageButton.ImageButtonStyle(Styles.emptyi);
-        gripStyle.imageUpColor = Yr2Vars.mutedColor;
-        ImageButton grip = new ImageButton(Icon.resizeSmall, gripStyle);
+        ImageButton grip = new ImageButton(Icon.resizeSmall, Styles.emptyi);
+        grip.getStyle().imageUpColor = Yr2Vars.mutedColor;
 
         grip.addListener(new InputListener() {
-            float startX, startY;
+            float startStageX, startStageY;
             float startW, startH;
             float startPosY;
 
             @Override
             public boolean touchDown(InputEvent event, float x, float y, int pointer, KeyCode button) {
-                startX = Core.input.mouseX();
-                startY = Core.input.mouseY();
+                startStageX = Yr2Vars.mouseX();
+                startStageY = Yr2Vars.mouseY();
                 startW = size.x;
                 startH = size.y;
                 startPosY = pos.y;
-                gripStyle.imageUpColor = Yr2Vars.themeColor;
+                grip.getStyle().imageUpColor = Yr2Vars.themeColor;
                 event.stop();
                 return true;
             }
 
             @Override
             public void touchDragged(InputEvent event, float x, float y, int pointer) {
-                float dx = Core.input.mouseX() - startX;
-                float dy = Core.input.mouseY() - startY;
+                float dx = Yr2Vars.mouseX() - startStageX;
+                float dy = Yr2Vars.mouseY() - startStageY;
 
-                float curScale = (isTransform() && scaleX > 0.01f) ? scaleX : 1f;
-                float newW = Math.max(minSize.x, startW + dx / curScale);
-                float newH = Math.max(minSize.y, startH - dy / curScale);
+                float curScale = (!attachedPaneMode && isTransform() && scaleX > 0.01f) ? scaleX : 1f;
+                float widthDelta = attachedPaneMode ? (dx * 2f) : (dx / curScale);
+                float minW = attachedPaneMode ? Math.max(360f, minSize.x) : minSize.x;
+                float minH = attachedPaneMode ? Math.max(200f, minSize.y) : minSize.y;
 
-                // 悬浮模式向下拉伸: 顶部位置保持不动，底部顺应拖拽方向向下延伸长高
-                if (!pinned) {
+                float maxW = Yr2Vars.sceneW() - 12f;
+                float maxH = Yr2Vars.sceneH() - 12f;
+                float newW = Mathf.clamp(startW + widthDelta, minW, Math.max(minW, maxW));
+                float newH = Mathf.clamp(startH - dy / curScale, minH, Math.max(minH, maxH));
+
+                if (!pinned && !attachedPaneMode) {
                     pos.y = startPosY - (newH - startH);
                 }
 
                 size.set(newW, newH);
-                // pinned: 顶部中心锚点保持钉死, 窗口随尺寸围绕锚点自然伸展 (update 每帧按锚点重算 pos);
-                // 绝不可在此 syncWorldPos() — 用变大后的窗口顶边反算锚点会让锚点随尺寸漂移, 越往下拉窗口越往上涨
-                if (!pinned) {
+                if (!pinned && !attachedPaneMode) {
                     clampToScreen();
                 }
                 onResized();
+                applyBoundsNow();
             }
 
             @Override
             public void touchUp(InputEvent event, float x, float y, int pointer, KeyCode button) {
-                // 严禁在此重置 baseCameraScale: 手柄只改窗口尺寸, 缩放基准(钉住/校准那一刻的相机状态)与它无关;
-                // 重置会导致 scl 跳回 1, 表现为"拉一下手柄, 全息缩放比例直接变成当前的"(天坑 #10 的姊妹坑)
-                gripStyle.imageUpColor = Yr2Vars.mutedColor;
+                grip.getStyle().imageUpColor = Yr2Vars.mutedColor;
+                applyBoundsNow();
             }
         });
 
@@ -323,10 +362,24 @@ public class Yrailiuxa2 extends Table {
 
     private void headTableInit(String text) {
         headTable.touchable = Touchable.enabled;
+
+        Runnable toggleCollapse = () -> {
+            showMainTable = !showMainTable;
+            mainTableBuild();
+            applyBoundsNow();
+        };
+
         headTable.addListener(new InputListener() {
+            long lastTapTime = 0L;
+            boolean dragged = false;
+
             @Override
             public boolean touchDown(InputEvent event, float xDown, float yDown, int pointer, KeyCode button) {
+                if (event.targetActor instanceof Button || (event.targetActor != null && event.targetActor.isDescendantOf(e -> e instanceof Button))) {
+                    return false;
+                }
                 bias.set(xDown, yDown);
+                dragged = false;
                 bringToFocus();
                 event.stop();
                 return true;
@@ -334,9 +387,25 @@ public class Yrailiuxa2 extends Table {
 
             @Override
             public void touchDragged(InputEvent event, float xDragged, float yDragged, int pointer) {
-                // 同上: 本地差 × scale = 屏幕像素差 (天坑 #20)
-                pos.add((xDragged - bias.x) * scaleX, (yDragged - bias.y) * scaleY);
+                float dx = (xDragged - bias.x) * scaleX;
+                float dy = (yDragged - bias.y) * scaleY;
+                if (Math.abs(dx) > 2f || Math.abs(dy) > 2f) dragged = true;
+                pos.add(dx, dy);
                 if (pinned) syncWorldPos();
+                applyBoundsNow();
+            }
+
+            @Override
+            public void touchUp(InputEvent event, float x, float y, int pointer, KeyCode button) {
+                if (!dragged) {
+                    long now = Time.millis();
+                    if (now - lastTapTime < 300L) {
+                        lastTapTime = 0L;
+                        toggleCollapse.run();
+                        return;
+                    }
+                    lastTapTime = now;
+                }
             }
         });
 
@@ -346,47 +415,21 @@ public class Yrailiuxa2 extends Table {
         headTable.add(title).pad(0, 10, 0, 10).height(30).minWidth(0).growX();
 
         if (pinnable) {
-            ImageButton.ImageButtonStyle pinStyle = new ImageButton.ImageButtonStyle(Styles.emptyi);
-            pinStyle.imageUp = Icon.lockOpenSmall;
-            Button pinButton = headTable.button(Icon.lockOpenSmall, Styles.emptyi, () -> {}).size(30).right().get();
-            Runnable updatePinStyle = () -> {
-                pinStyle.imageUp = pinned ? Icon.lockSmall : Icon.lockOpenSmall;
-                pinStyle.imageUpColor = pinned ? Yr2Vars.themeColor : Color.white;
-                pinButton.setStyle(pinStyle);
-            };
-            pinButton.clicked(() -> {
-                togglePinned();
-                updatePinStyle.run();
+            // 三态锁按钮: 直接操作 pinButton.getStyle()，避免 Table.button 内部克隆 Style 导致图标不刷新！
+            ImageButton pinButton = headTable.button(Icon.lockOpenSmall, Styles.emptyi, this::cyclePinState).size(30).right().get();
+            pinButton.update(() -> {
+                var s = pinButton.getStyle();
+                s.imageUp = switch (pinState) {
+                    case PIN_LOCKED_1TO1 -> Icon.zoomSmall;
+                    case PIN_LOCKED_ZOOM -> Icon.lockSmall;
+                    default -> Icon.lockOpenSmall;
+                };
+                s.imageUpColor = (pinState == PIN_NONE) ? Color.white : Yr2Vars.themeColor;
             });
-            onPinChanged = updatePinStyle;
         }
 
-        ImageButton.ImageButtonStyle style = new ImageButton.ImageButtonStyle(Styles.emptyi);
-        Button visButton = headTable.button(Icon.eyeSmall, Styles.emptyi, () -> {}).size(30).right().get();
-        visButton.clicked(() -> {
-            showMainTable = !showMainTable;
-            style.imageUp = showMainTable ? Icon.eyeSmall : Icon.eyeOffSmall;
-            visButton.setStyle(style);
-            mainTableBuild();
-        });
-
-        // 缩放模式切换按钮: 钉住时点击切换【全息随镜缩放 / 1:1 UI 像素锁定】；只变色，彻底废除 30px 黑粗边框
-        ImageButton.ImageButtonStyle scaleModeStyle = new ImageButton.ImageButtonStyle(Styles.emptyi);
-        scaleModeStyle.imageUp = Icon.zoomSmall;
-        Button scaleModeButton = headTable.button(Icon.zoomSmall, Styles.emptyi, () -> {}).size(30).right().get();
-        Runnable updateScaleModeStyle = () -> {
-            scaleModeStyle.imageUpColor = lockScale1to1 ? Yr2Vars.themeColor : Color.white;
-            scaleModeButton.setStyle(scaleModeStyle);
-        };
-        scaleModeButton.clicked(() -> {
-            lockScale1to1 = !lockScale1to1;
-            if (!lockScale1to1 && Core.camera != null) {
-                baseCameraScale = Core.graphics.getWidth() / Core.camera.width;
-            } else {
-                baseCameraScale = -1f;
-            }
-            updateScaleModeStyle.run();
-        });
+        ImageButton visButton = headTable.button(Icon.eyeSmall, Styles.emptyi, toggleCollapse).size(30).right().get();
+        visButton.update(() -> visButton.getStyle().imageUp = showMainTable ? Icon.eyeSmall : Icon.eyeOffSmall);
 
         headTable.button(Icon.cancelSmall, Styles.emptyi, this::requestClose).size(30).right();
     }
@@ -397,14 +440,16 @@ public class Yrailiuxa2 extends Table {
     }
 
     public void addToScene() {
-        if (hasParent()) return;
+        if (hasParent() || Core.scene == null) return;
         Core.scene.root.addChild(this);
         visible(() -> Vars.state.isGame() && Vars.ui.hudfrag.shown && !hidden);
         bringToFocus();
     }
 
     public void removeFromScene() {
-        Core.scene.root.removeChild(this);
+        if (parent != null) {
+            remove();
+        }
     }
 
     public float getActualScreenX() {
@@ -440,12 +485,6 @@ public class Yrailiuxa2 extends Table {
     public void clampToScreen() {
         pos.x = Mathf.clamp(pos.x, 30f - size.x, Yr2Vars.sceneW() - 30f);
         pos.y = Mathf.clamp(pos.y, 30f - size.y, Yr2Vars.sceneH() - size.y);
-    }
-
-    public static void bindScrollFocus(ScrollPane p) {
-        Element e = Core.scene.hit(Yr2Vars.mouseX(), Yr2Vars.mouseY(), true);
-        if (e != null && e.isDescendantOf(p)) p.requestScroll();
-        else if (p.hasScroll()) Core.scene.setScrollFocus(null);
     }
 
     public static void configurePane(ScrollPane p) {

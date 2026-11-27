@@ -2,12 +2,12 @@ displayName: "new-yr2-logic-monitor"
 name: "yr2-logic-monitor"
 author: "yaddrx2 (Refurbished by NOSBhghgg)"
 main: "yr2lm.Yr2lmain"
-version: "1.6.0"
+version: "0.0.1"
 minGameVersion: "160.5"
 java: true
 hidden: true
 description: "Logic Monitor — real-time logic & hardware inspector.
-QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
+QQGroup: 615081546
 1. Main window (yr2lm):
   add: Pick a block to monitor
   copy: Copy block config & code
@@ -25,7 +25,6 @@ QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
     Search: Filter variable names
     [Cc]: Case-sensitive
     [W]: Whole-word match
-    textBuffer: Print-buffer monitor
   Code Editor:
     \ue86a Reload block code
     \ue81b Save & commit code to block
@@ -57,26 +56,14 @@ QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
   Decimals (0-10): Precision slider
   Columns per row (1-16): Display columns slider
   \ue869/\ue81b In-place edit & save mode
-  Warm-gold glow: Data-mutation flash
-  World tracer line: Floating-cell world connection
 4. Message Monitor:
   \ue806/\ue829 Pause / resume capture
   \ue86a Manual refresh
   \ue86f Clear all logs
-  128-entry ring buffer (anti-spam)
   \ue874/\ue815 Copy / delete a single log
-5. Global UX:
-  \ue88d Pin to world building (scales with map)
-  \ue88a Toggle holographic / 1:1 UI scaling
-  \ue88e Collapse into 30px title capsule
-  \ue815 Close window safely
-  \ue80b Corner drag-resize with size memory
-  \ue87c Gear injection & spawn from config bar
-  [y] Aurora-green button: Bottom-right reopen
-  Dual-end: Built-in classes.dex, all-platform jar
 ==========================================
 逻辑监视器 — 逻辑与硬件实时交互监视器。
-交流群: 615081546 (适配 v160.5 双端合一)
+交流群: 615081546
 1.主窗口 (yr2lm):
   add: 选取方块打开监视
   copy: 复制方块配置与代码
@@ -94,7 +81,6 @@ QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
     搜索框: 过滤变量名
     [Cc]: 区分大小写
     [W]: 全词匹配
-    textBuffer: 打印缓冲区监控
   编辑器:
     \ue86a 重新读取方块代码
     \ue81b 保存提交代码到方块
@@ -126,20 +112,8 @@ QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
   保留小数 (0-10): 精度调节滑条
   每行个数 (1-16): 显示列数滑条
   \ue869/\ue81b 内存就地编辑与保存
-  暖金微光: 数值修改突变闪烁
-  世界引线: 悬浮格子显示世界连线
 4.信息板:
   \ue806/\ue829 暂停捕获记录
   \ue86a 手动刷新消息
   \ue86f 清空所有历史日志
-  128 条环形缓冲: 防爆内存循环记录
-  \ue874/\ue815 单条复制与删除
-5.通用交互:
-  \ue88d 钉在世界建筑上随地图缩放
-  \ue88a 切换全息随镜缩放 / 1:1 UI
-  \ue88e 折叠为 30px 标题迷你胶囊
-  \ue815 安全关闭监视窗口
-  \ue80b 右下角微型拖拽缩放并记忆尺寸
-  \ue87c 配置条追加齿轮，单击展开，拖拽生窗
-  [y] 极光绿按钮: 右下角常驻唤出
-  双端合一: 内置 classes.dex 全平台通用"
+  \ue874/\ue815 单条复制与删除"

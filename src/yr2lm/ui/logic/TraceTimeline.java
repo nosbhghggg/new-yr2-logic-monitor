@@ -1,18 +1,16 @@
-package yr2lm.ui;
+package yr2lm.ui.logic;
 
 import arc.struct.ObjectMap;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 
 /**
  * 流水时序数据体: 单步执行历史、快照回溯与跳行目标查询。
- * <p>
- * 纯数据与历史, 不碰任何界面控件——原为 LogicMonitor 的静态嵌套类, 拆出独立成文件供各界复用。
  */
 public class TraceTimeline {
 
-    /** 单步时序历史记录与快照实体。 */
     public static class Record {
         public final int step;
         public int fromLine;
@@ -49,34 +47,36 @@ public class TraceTimeline {
         }
     }
 
-    private static final int CAPACITY = 64;
-    private final ArrayList<Record> history = new ArrayList<>();
+    public static final int CAPACITY = 64;
+    private final ArrayDeque<Record> ring = new ArrayDeque<>(CAPACITY + 1);
+    private final ArrayList<Record> historyView = new ArrayList<>(CAPACITY);
+    private boolean viewDirty = false;
     private int stepCounter = 0;
     private Record selected = null;
     private int highlightedLine = -1;
 
     public void recordStep(int fromLine, int toLine, boolean isJump, String code, String diff, ArrayList<String> diffList, HashSet<String> changedVarNames, ObjectMap<String, String> snapshot) {
-        boolean isKeyMilestone = isJump || !diff.isEmpty();
+        boolean isKeyMilestone = isJump || (diff != null && !diff.isEmpty());
         if (!isKeyMilestone) {
-            if (!history.isEmpty()) {
-                Record last = history.get(history.size() - 1);
-                if (last.isCollapsed) {
-                    last.toLine = toLine;
-                    last.collapsedCount++;
-                    return;
-                }
+            Record last = ring.peekLast();
+            if (last != null && last.isCollapsed) {
+                last.toLine = toLine;
+                last.collapsedCount++;
+                return;
             }
             stepCounter++;
             Record collapsed = new Record(stepCounter, fromLine, toLine, false, true, 1, code, "", null, null, snapshot);
-            if (history.size() >= CAPACITY) history.remove(0);
-            history.add(collapsed);
+            if (ring.size() >= CAPACITY) ring.pollFirst();
+            ring.addLast(collapsed);
+            viewDirty = true;
             return;
         }
 
         stepCounter++;
         Record rec = new Record(stepCounter, fromLine, toLine, isJump, false, 1, code, diff, diffList, changedVarNames, snapshot);
-        if (history.size() >= CAPACITY) history.remove(0);
-        history.add(rec);
+        if (ring.size() >= CAPACITY) ring.pollFirst();
+        ring.addLast(rec);
+        viewDirty = true;
     }
 
     public void rollbackTo(Record record) {
@@ -90,7 +90,9 @@ public class TraceTimeline {
     }
 
     public void clear() {
-        history.clear();
+        ring.clear();
+        historyView.clear();
+        viewDirty = false;
         stepCounter = 0;
         restoreRealtime();
     }
@@ -120,6 +122,11 @@ public class TraceTimeline {
     }
 
     public ArrayList<Record> getHistory() {
-        return history;
+        if (viewDirty) {
+            historyView.clear();
+            historyView.addAll(ring);
+            viewDirty = false;
+        }
+        return historyView;
     }
 }

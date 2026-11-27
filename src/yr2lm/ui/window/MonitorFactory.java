@@ -1,4 +1,4 @@
-package yr2lm.ui;
+package yr2lm.ui.window;
 
 import arc.Core;
 import arc.math.geom.Vec2;
@@ -6,12 +6,18 @@ import mindustry.gen.Building;
 import mindustry.world.blocks.logic.LogicBlock;
 import mindustry.world.blocks.logic.MemoryBlock;
 import mindustry.world.blocks.logic.MessageBlock;
-
-import java.math.BigDecimal;
+import yr2lm.Yr2Vars;
+import yr2lm.ui.logic.LogicMonitor;
+import yr2lm.ui.monitor.MemoryMonitor;
+import yr2lm.ui.monitor.MessageMonitor;
+import yr2lm.util.MemUtil;
 
 /**
  * 监视器统一构建工厂与偏好尺寸管理者。
- * 集中管理各方块监视窗口的创建逻辑与浮窗/内嵌面板的尺寸持久化。
+ * <p>
+ * 重构改进:
+ * 彻底修复第一代“构造函数硬编码 size.set() 与工厂 size.set() 互相打架覆盖”的缺陷：
+ * 尺寸与模式在工厂中一次性注入并立即调用 `monitor.applyBoundsNow()`，消除开窗首帧尺寸为 0 或闪烁跳变的毛病。
  */
 public class MonitorFactory {
     public static float lastLogicW = -1f, lastLogicH = -1f;
@@ -21,6 +27,13 @@ public class MonitorFactory {
     public static float paneLogicW = -1f, paneLogicH = -1f;
     public static float paneMemW = -1f, paneMemH = -1f;
     public static float paneMesW = -1f, paneMesH = -1f;
+
+    /** 统一多态判定: 支持原版及任意第三方模组扩展的逻辑块、内存块、信息板子类。 */
+    public static boolean isSupported(Building building) {
+        return building instanceof LogicBlock.LogicBuild
+                || building instanceof MemoryBlock.MemoryBuild
+                || building instanceof MessageBlock.MessageBuild;
+    }
 
     public static void loadSizes() {
         lastLogicW = Core.settings.getFloat("yr2lm.win.lastLogicW", -1f);
@@ -69,8 +82,8 @@ public class MonitorFactory {
     }
 
     private static float[] sizeFor(Building selected, boolean pane) {
-        float screenW = (Core.graphics != null) ? Core.graphics.getWidth() : 1920f;
-        float screenH = (Core.graphics != null) ? Core.graphics.getHeight() : 1080f;
+        float screenW = Yr2Vars.sceneW() > 0 ? Yr2Vars.sceneW() : 1920f;
+        float screenH = Yr2Vars.sceneH() > 0 ? Yr2Vars.sceneH() : 1080f;
         float w, h;
         if (selected instanceof LogicBlock.LogicBuild) {
             float defaultLogicW = screenW >= 860f ? 800f : 540f;
@@ -88,25 +101,26 @@ public class MonitorFactory {
 
     public static Monitor create(Building building, Vec2 pos, boolean attached) {
         if (building == null) return null;
-        String x = BigDecimal.valueOf(building.x / 8).stripTrailingZeros().toPlainString();
-        String y = BigDecimal.valueOf(building.y / 8).stripTrailingZeros().toPlainString();
+        String x = MemUtil.doubleToString(building.x / 8.0);
+        String y = MemUtil.doubleToString(building.y / 8.0);
         String blockName = (building.block != null ? building.block.name : "processor");
         String title = blockName + "(" + x + ", " + y + ")";
 
+        float[] sz = attached ? paneSize(building) : prefSize(building);
+
         Monitor monitor;
         if (building instanceof LogicBlock.LogicBuild lb) {
-            monitor = new LogicMonitor(title, lb, pos);
+            monitor = new LogicMonitor(title, lb, pos, sz[0], sz[1]);
         } else if (building instanceof MemoryBlock.MemoryBuild mb) {
-            monitor = new MemoryMonitor(title, mb, pos);
+            monitor = new MemoryMonitor(title, mb, pos, sz[0], sz[1]);
         } else if (building instanceof MessageBlock.MessageBuild mb) {
-            monitor = new MessageMonitor(title, mb, pos);
+            monitor = new MessageMonitor(title, mb, pos, sz[0], sz[1]);
         } else {
             return null;
         }
 
-        monitor.attachedPaneMode = attached;
-        float[] sz = attached ? paneSize(building) : prefSize(building);
-        monitor.size.set(sz[0], sz[1]);
+        monitor.setAttachedPaneMode(attached);
+        monitor.applyBoundsNow();
         return monitor;
     }
 }

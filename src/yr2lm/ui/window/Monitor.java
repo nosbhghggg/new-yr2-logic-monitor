@@ -1,8 +1,6 @@
-package yr2lm.ui;
+package yr2lm.ui.window;
 
-import arc.Core;
 import arc.math.geom.Vec2;
-import arc.scene.Element;
 import arc.scene.ui.layout.Table;
 import mindustry.Vars;
 import mindustry.gen.Building;
@@ -13,12 +11,11 @@ import yr2lm.Yr2Vars;
 import yr2lm.graphics.DrawExt;
 
 /**
- * 监视窗口基类。
+ * 绑定世界方块的监视窗口基类。
  * <p>
- * 架构特性:
- * 1. 自动感知世界方块生命周期: 仅在方块被摧毁(dead)时安全析构关闭，不再覆盖父类 update() 导致尺寸归零与误关闭；
- * 2. 鼠标悬浮面板时自动高亮世界中的关联方块；
- * 3. 统一托管浮窗与内嵌面板模式的尺寸变化持久化，消除子类重复样板代码。
+ * 重构改进:
+ * 强制约束 `mainTable.add(monitorTable).minWidth(0f).minHeight(0f).grow()`，
+ * 阻断子面板的 preferredWidth 向上冒泡撑破窗口边界，彻底解决快速缩小窗口时右下角拖拽手柄被挤出窗口外的问题。
  */
 public class Monitor extends Yrailiuxa2 {
     protected final Table monitorTable;
@@ -30,20 +27,22 @@ public class Monitor extends Yrailiuxa2 {
         this.monitorTable = new Table();
         this.pos.set(pos);
         size.set(400, 300);
-        minSize.set(400, 300);
+        minSize.set(240, 180);
         mainTable.top().left();
-        mainTable.add(monitorTable).top().left().grow();
+        mainTable.add(monitorTable).top().left().minWidth(0f).minHeight(0f).grow();
         mainTable.update(() -> {
-            Element e = Core.scene.hit(Yr2Vars.mouseX(), Yr2Vars.mouseY(), true);
-            if (e != null && e.isDescendantOf(mainTable))
+            if (Yr2Vars.isHovered(mainTable)) {
                 DrawExt.select(building, Yr2Vars.themeColor);
+            }
         });
     }
 
     @Override
     protected void onUpdate() {
-        if (building != null && Vars.state.isGame() && building.dead()) {
-            requestClose();
+        if (building != null && Vars.state.isGame()) {
+            if (building.dead() || !building.isValid() || Vars.world.build(building.pos()) != building) {
+                requestClose();
+            }
         }
     }
 

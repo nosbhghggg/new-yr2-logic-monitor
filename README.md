@@ -6,7 +6,7 @@ This is a Mindustry logic-assistance mod.
 
 
 - Logic Monitor — real-time logic & hardware inspector.
-- QQGroup: 615081546 (adapted for v160.5, desktop & Android merged jar)
+- QQGroup: 615081546
 
 Language / 语言: English · **[中文说明](#功能介绍中文)**
 
@@ -77,21 +77,10 @@ Language / 语言: English · **[中文说明](#功能介绍中文)**
 - 128-entry ring buffer (anti-spam)
 - Copy / delete a single log
 
-### 5. Global UX
-
-- Pin to world building (scales with map)
-- Toggle holographic / 1:1 UI scaling
-- Collapse into 30px title capsule
-- Close window safely
-- Corner drag-resize with size memory
-- Gear injection & spawn from config bar
-- \[y\] Aurora-green button: Bottom-right reopen
-- Dual-end: Built-in classes.dex, all-platform jar
-
 ## 功能介绍(中文)
 
 - 逻辑监视器 — 逻辑与硬件实时交互监视器。
-- 交流群: 615081546 (适配 v160.5 双端合一)
+- 交流群: 615081546
 
 ### 1. 主窗口 (yr2lm)
 
@@ -113,7 +102,6 @@ Language / 语言: English · **[中文说明](#功能介绍中文)**
   - 搜索框: 过滤变量名
   - \[Cc\] 区分大小写开关
   - \[W\] 全词匹配开关
-  - textBuffer: 打印缓冲区监控
 - 编辑器:
   - 重新读取方块代码
   - 保存提交代码到方块
@@ -147,24 +135,10 @@ Language / 语言: English · **[中文说明](#功能介绍中文)**
 - 保留小数 (0-10): 精度调节滑条
 - 每行个数 (1-16): 显示列数滑条
 - 内存就地编辑与保存
-- 暖金微光: 数值修改突变闪烁
-- 世界引线: 悬浮格子显示世界连线
 
 ### 4. 信息板
 
 - 暂停捕获记录
 - 手动刷新消息
 - 清空所有历史日志
-- 128 条环形缓冲: 防爆内存循环记录
 - 单条复制与删除
-
-### 5. 通用交互
-
-- 钉在世界建筑上随地图缩放
-- 切换全息随镜缩放 / 1:1 UI
-- 折叠为 30px 标题迷你胶囊
-- 安全关闭监视窗口
-- 右下角微型拖拽缩放并记忆尺寸
-- 配置条追加齿轮,单击展开,拖拽唤出
-- \[y\] 极光绿按钮: 右下角常驻唤出
-- 双端合一: 内置 classes.dex 全平台通用
